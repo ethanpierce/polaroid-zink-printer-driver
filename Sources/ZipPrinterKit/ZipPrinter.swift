@@ -120,8 +120,8 @@ public final class ZipPrinter {
     }
 
     /// Opens and closes an OBEX session without sending anything. Throws if
-    /// the printer is asleep or out of range; as a side effect, resets the
-    /// printer's idle timer so it doesn't power itself off.
+    /// the printer is asleep or out of range. (This doesn't reset the
+    /// printer's idle power-off timer.)
     public func ping() async throws {
         let channelID = await objectPushChannel()
         let connection = RFCOMMConnection(device: device)

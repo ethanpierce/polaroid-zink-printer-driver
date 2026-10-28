@@ -26,7 +26,6 @@ struct ZipPrintApp: App {
             CommandMenu("Printer") {
                 Button("Find Printers") { model.scan() }
                     .keyboardShortcut("r")
-                Toggle("Keep Printer Awake", isOn: $model.keepAwake)
                 Divider()
                 Toggle("Show in Print Dialog", isOn: Binding(
                     get: { model.isInPrintMenu },

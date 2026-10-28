@@ -30,19 +30,11 @@ final class AppModel: ObservableObject {
             UserDefaults.standard.set(selectedPrinter?.name, forKey: "printerName")
             if selectedAddress != oldValue {
                 printerStatus = .unknown
-                restartKeepAwake()
+                restartStatusChecks()
             }
         }
     }
     @Published private(set) var printerStatus = PrinterStatus.unknown
-    /// Check in with the printer every so often so it doesn't power itself
-    /// off while the app is open.
-    @Published var keepAwake = UserDefaults.standard.object(forKey: "keepAwake") as? Bool ?? true {
-        didSet {
-            UserDefaults.standard.set(keepAwake, forKey: "keepAwake")
-            restartKeepAwake()
-        }
-    }
 
     // Document
     @Published private(set) var sourceImage: CGImage?
@@ -57,13 +49,16 @@ final class AppModel: ObservableObject {
 
     private let browser = PrinterBrowser()
     private var bluetoothReady = false
-    private var keepAwakeTask: Task<Void, Never>?
+    private var statusTask: Task<Void, Never>?
     private var isPinging = false
     private var lastPrint = Date.distantPast
     private var isCommandLine = false
 
-    /// Comfortably shorter than the printer's own idle power-off.
-    static let keepAwakeInterval: TimeInterval = 45
+    /// How often to check whether the printer is reachable. The ZIP powers
+    /// itself off after about five idle minutes, and these checks don't
+    /// count as activity, but they let the window notice when it's switched
+    /// back on.
+    static let statusInterval: TimeInterval = 45
 
     static let openableTypes: [UTType] = [.image, .pdf]
 
@@ -80,7 +75,7 @@ final class AppModel: ObservableObject {
     func start() async {
         await ensureBluetooth()
         if selectedAddress == nil && !isScanning { scan() }
-        restartKeepAwake()
+        restartStatusChecks()
     }
 
     private func ensureBluetooth() async {
@@ -127,19 +122,16 @@ final class AppModel: ObservableObject {
         if selectedAddress == nil { selectedAddress = printers.first?.address }
     }
 
-    // MARK: Keep awake
+    // MARK: Printer status
 
-    private func restartKeepAwake() {
-        keepAwakeTask?.cancel()
+    private func restartStatusChecks() {
+        statusTask?.cancel()
         guard bluetoothReady, !isCommandLine else { return }
-        keepAwakeTask = Task { [weak self] in
+        statusTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.checkPrinter()
-                // With keep-awake off, check once so the status is known,
-                // then leave the printer alone so it can sleep.
-                guard self.keepAwake else { return }
-                try? await Task.sleep(nanoseconds: UInt64(Self.keepAwakeInterval * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: UInt64(Self.statusInterval * 1_000_000_000))
             }
         }
     }
@@ -265,7 +257,7 @@ final class AppModel: ObservableObject {
         guard let i = args.firstIndex(of: "--print"), i + 1 < args.count else { return nil }
         let url = URL(fileURLWithPath: args[i + 1])
         isCommandLine = true
-        keepAwakeTask?.cancel()
+        statusTask?.cancel()
         if let p = args.firstIndex(of: "--printer"), p + 1 < args.count {
             let address = args[p + 1]
             if !printers.contains(where: { $0.address == address }) {

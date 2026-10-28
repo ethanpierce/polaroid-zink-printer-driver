@@ -70,6 +70,15 @@ this mapping:
 | `CD` | Wrong paper |
 | `CF` | Cooling down |
 
+## Idle power-off
+
+The ZIP switches itself off about 5 minutes after its last print. An empty
+OBEX `CONNECT`/`DISCONNECT` session every 45 s does **not** reset this timer:
+it was tested and the printer still slept on schedule. ZIP Print uses these
+sessions only to show whether the printer is reachable. The vendor control
+channel (RFCOMM 1) is the likely place for a real keep-alive or a power-off
+setting, but it hasn't been explored yet.
+
 ## Image format
 
 The ZIP prints 2×3" at 313×400 dpi, a grid of 640×1224 non-square dots. The
