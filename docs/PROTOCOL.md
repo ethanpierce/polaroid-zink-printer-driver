@@ -19,11 +19,17 @@ paired before printing.
 
 | RFCOMM channel | Service UUID | Purpose |
 |---|---|---|
-| 1 | `00000000-DECA-FADE-DECA-DEAFDECACAFF` | Vendor control channel (status, firmware). Not needed to print. |
+| 1 | `00000000-DECA-FADE-DECA-DEAFDECACAFF` | Apple iAP2, the accessory protocol iPhones use. Not needed to print. |
 | 2 | `0x1101` Serial Port | Serial port. Not needed to print. |
 | 4 | `0x1105` OBEX Object Push | **Printing.** Push a JPEG here. |
 
 ZIP Print looks up the Object Push channel over SDP. It falls back to channel 4.
+
+Channel 1 is Apple's iAP2 service for MFi accessories. When it's opened, the
+printer sends the iAP2 detect packet `FF 55 02 00 EE 10` about once a second
+and waits for an iPhone to answer. Polaroid's iOS app reaches the printer this
+way, through Apple's External Accessory framework. Its commands are private and
+sit behind the iAP2 handshake. Channel 2 sends nothing when opened.
 
 ## Printing: OBEX Object Push
 
@@ -47,8 +53,8 @@ Printing is a standard OBEX `PUT` of a JPEG. These bytes were captured from a ZI
 ← A0 00 03
 ```
 
-ZIP Print sends 8 KB packets. That's well under the printer's maximum, and it
-keeps the progress bar moving.
+ZIP Print sends 4 KB packets, paced as described below. That keeps the
+printer's receive buffer from overflowing.
 
 ### Error responses
 
@@ -72,12 +78,17 @@ this mapping:
 
 ## Idle power-off
 
-The ZIP switches itself off about 5 minutes after its last print. An empty
-OBEX `CONNECT`/`DISCONNECT` session every 45 s does **not** reset this timer:
-it was tested and the printer still slept on schedule. ZIP Print uses these
-sessions only to show whether the printer is reachable. The vendor control
-channel (RFCOMM 1) is the likely place for a real keep-alive or a power-off
-setting, but it hasn't been explored yet.
+The ZIP switches itself off a few minutes after its last print. Nothing
+reachable from a Mac stopped it. These were tested, and the printer still
+powered off on schedule:
+
+- An empty OBEX `CONNECT`/`DISCONNECT` session every 45 s.
+- Holding channel 2 open together with a connected OBEX session on channel 4.
+  The printer dropped both at the same moment when it powered off.
+
+ZIP Print uses the OBEX sessions only to show whether the printer is
+reachable. Any keep-alive or power-off setting would sit in the iOS app's
+private commands on channel 1, behind Apple's iAP2 handshake.
 
 ## Image format
 

@@ -5,7 +5,7 @@ import IOBluetooth
 ///
 /// The printer advertises three RFCOMM services over SDP:
 ///  - OBEX Object Push (UUID 0x1105), usually channel 4: accepts a JPEG and prints it
-///  - a vendor control channel (UUID 00000000-DECA-FADE-DECA-DEAFDECACAFF), usually channel 1
+///  - Apple iAP2 (UUID 00000000-DECA-FADE-DECA-DEAFDECACAFF), usually channel 1, for the iOS app
 ///  - Serial Port (UUID 0x1101), usually channel 2
 ///
 /// Printing only needs Object Push, and the printer doesn't require pairing.

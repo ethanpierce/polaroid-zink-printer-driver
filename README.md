@@ -20,7 +20,7 @@ drivers.
   the crop, and rotate in 90° steps. Landscape photos are turned to fill the
   portrait sheet.
 - **Shows printer status.** The window shows whether the printer is **Ready**
-  or **Asleep**. The ZIP powers itself off after about 5 idle minutes. When you
+  or **Asleep**. The ZIP powers itself off after a few idle minutes. When you
   switch it back on, ZIP Print notices within 45 seconds.
 - **Print from any app.** Turn on **Printer › Show in Print Dialog**. Then, in
   any app, choose **File › Print… › PDF ▾ › Print to Polaroid ZIP**.
@@ -96,8 +96,9 @@ Run the tests with `swift test`.
 
 - **The printer isn't found, or shows "Asleep".** Make sure it's on (the LED
   is lit) and within a few metres. Close the Polaroid app on your phone, which
-  may be holding the connection. The ZIP switches itself off after about 5 idle
-  minutes; press the power button to wake it.
+  may be holding the connection. The ZIP switches itself off after a few idle
+  minutes; press the power button to wake it. Nothing a Mac can send keeps it
+  awake (see [docs/PROTOCOL.md](docs/PROTOCOL.md#idle-power-off)).
 - **A thin unprinted sliver at one end.** This is the printer's paper
   registration. The whole image prints about 1.5 mm off along the sheet, so
   the far edge gets trimmed by the same amount. Keep important details away
