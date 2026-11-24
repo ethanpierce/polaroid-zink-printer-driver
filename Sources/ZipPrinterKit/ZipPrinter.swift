@@ -33,23 +33,34 @@ public final class ZipPrinter {
 
     /// Sends a JPEG to the printer. `progress` is called with 0...1 as the
     /// transfer proceeds; printing starts on its own once the transfer ends.
-    public func send(jpeg: Data, fileName: String = "photo.jpg", progress: @escaping (Double) -> Void = { _ in }) async throws {
+    ///
+    /// If the printer can't be reached, or the link drops before the last
+    /// packet, this tries again up to `retries` more times, calling `onRetry`
+    /// with the number of the attempt about to start. Once the whole photo
+    /// has gone, nothing is retried, so a photo never prints twice.
+    /// Cancelling the task stops it before the photo starts to send.
+    public func send(jpeg: Data, fileName: String = "photo.jpg", retries: Int = 1,
+                     onRetry: @escaping (Int) -> Void = { _ in },
+                     progress: @escaping (Double) -> Void = { _ in }) async throws {
         let channelID = await objectPushChannel()
         ZipLog.log("Object Push is on RFCOMM channel \(channelID); sending \(jpeg.count) bytes")
-        do {
-            try await send(jpeg: jpeg, fileName: fileName, channelID: channelID, progress: progress)
-        } catch let error as SendFailure where !error.finalPacketSent && error.isTransient {
-            // The link sometimes drops on the first connection after the
-            // printer wakes up. Nothing has printed yet, so try once more.
-            ZipLog.log("retrying after: \(error.underlying.localizedDescription)")
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+        var attempt = 1
+        while true {
+            try Task.checkCancellation()
             do {
                 try await send(jpeg: jpeg, fileName: fileName, channelID: channelID, progress: progress)
+                return
+            } catch let error as SendFailure where !error.finalPacketSent && error.isTransient && attempt <= retries {
+                // The printer may be asleep, or the link may have dropped on
+                // the first connection after it woke up. Nothing has printed
+                // yet, so try again.
+                ZipLog.log("attempt \(attempt) failed: \(error.underlying.localizedDescription)")
+                attempt += 1
+                onRetry(attempt)
+                try await Task.sleep(nanoseconds: 2_000_000_000)
             } catch let error as SendFailure {
                 throw error.underlying
             }
-        } catch let error as SendFailure {
-            throw error.underlying
         }
     }
 
@@ -89,6 +100,8 @@ public final class ZipPrinter {
 
         let packets = OBEX.putPackets(name: fileName, type: "image/jpeg", body: jpeg,
                                       maxPacketLength: min(maxPacket, Self.packetLength))
+        // Last chance to cancel: past here the photo is on its way.
+        try Task.checkCancellation()
         progress(0)
         ZipLog.log("CONNECT ok, printer max packet \(maxPacket); \(packets.count) PUT packets")
         let started = Date()

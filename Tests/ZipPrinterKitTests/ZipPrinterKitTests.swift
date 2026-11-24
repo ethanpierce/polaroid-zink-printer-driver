@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import ImageIO
 import XCTest
@@ -121,5 +122,48 @@ final class PrintImageTests: XCTestCase {
         XCTAssertLessThan(decoded.width, 640)
         XCTAssertEqual(decoded.width % 16, 0)
         XCTAssertEqual(decoded.height * 2, decoded.width * 3)
+    }
+}
+
+final class PasteTests: XCTestCase {
+    private var pasteboard: NSPasteboard!
+
+    override func setUp() {
+        pasteboard = NSPasteboard(name: NSPasteboard.Name("ZipPrintTests-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+    }
+
+    override func tearDown() {
+        pasteboard.releaseGlobally()
+    }
+
+    private func pngData(width: Int, height: Int) -> Data {
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8,
+                                   samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                   colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        return rep.representation(using: .png, properties: [:])!
+    }
+
+    func testPastesCopiedImage() throws {
+        pasteboard.setData(pngData(width: 30, height: 20), forType: .png)
+        let pasted = try XCTUnwrap(PrintImage.load(from: pasteboard))
+        XCTAssertEqual(pasted.image.width, 30)
+        XCTAssertEqual(pasted.image.height, 20)
+        XCTAssertEqual(pasted.name, "Pasted image")
+    }
+
+    func testPastesFileCopiedInFinder() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("zipprint-paste-\(UUID().uuidString).png")
+        try pngData(width: 12, height: 18).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        pasteboard.writeObjects([url as NSURL])
+        let pasted = try XCTUnwrap(PrintImage.load(from: pasteboard))
+        XCTAssertEqual(pasted.image.width, 12)
+        XCTAssertEqual(pasted.name, url.lastPathComponent)
+    }
+
+    func testIgnoresText() {
+        pasteboard.setString("not a photo", forType: .string)
+        XCTAssertNil(PrintImage.load(from: pasteboard))
     }
 }

@@ -14,14 +14,19 @@ drivers.
 - **Finds the printer automatically.** Switch the ZIP on and it appears. No
   Bluetooth pairing is needed.
 - **Prints photos or PDFs.** Open any image (JPEG, PNG, HEIC, TIFF…) or a PDF.
-  Drag it onto the window, onto the Dock icon, or use **File › Open**.
+  Drag it onto the window or the Dock icon, paste it with **⌘V** (an image
+  copied from any app, or a file copied in Finder), or use **File › Open**.
 - **Frame the shot.** Choose **Fill** (crop to cover the sheet) or **Fit**
   (show the whole image with white borders). Drag the preview to reposition
   the crop, and rotate in 90° steps. Landscape photos are turned to fill the
   portrait sheet.
 - **Shows printer status.** The window shows whether the printer is **Ready**
-  or **Asleep**. The ZIP powers itself off after a few idle minutes. When you
-  switch it back on, ZIP Print notices within 45 seconds.
+  or **Off or asleep**. The ZIP powers itself off after a few idle minutes.
+  After you switch it back on, click **Connect**, or wait: ZIP Print checks
+  again every 15 seconds.
+- **Keeps trying.** If the printer can't be reached when you print, ZIP Print
+  tries again for about a minute, so you can press the power button while it
+  waits. Click **Cancel** to stop. A photo is never sent twice.
 - **Print from any app.** Turn on **Printer › Show in Print Dialog**. Then, in
   any app, choose **File › Print… › PDF ▾ › Print to Polaroid ZIP**.
 - **Command line.**
@@ -95,17 +100,22 @@ Run the tests with `swift test`.
 
 ## Troubleshooting
 
-- **The printer isn't found, or shows "Asleep".** Make sure it's on (the LED
+- **The printer isn't found, or shows "Off or asleep".** Make sure it's on (the LED
   is lit) and within a few metres. Close the Polaroid app on your phone, which
   may be holding the connection. The ZIP switches itself off after a few idle
-  minutes; press the power button to wake it. Nothing a Mac can send keeps it
+  minutes; press the power button to wake it, then click **Connect**. There's
+  no need to connect it in the macOS Bluetooth menu. Nothing a Mac can send keeps it
   awake (see [docs/PROTOCOL.md](docs/PROTOCOL.md#idle-power-off)).
 - **A thin unprinted sliver at one end.** This is the printer's paper
   registration. The whole image prints about 1.5 mm off along the sheet, so
   the far edge gets trimmed by the same amount. Keep important details away
   from the very top and bottom, or use **Fit**.
-- **"The printer didn't respond."** The printer was probably asleep. Switch it
-  on and print again.
+- **"The printer didn't respond."** The printer was off or asleep for the whole
+  minute ZIP Print kept trying. Switch it on and print again.
+- **The motor runs but no sheet comes out.** The paper probably misfed. Switch
+  the printer off, take the paper out, check inside for a stuck sheet, and
+  reload with the blue Smart Sheet at the bottom (barcode down) and the photo
+  sheets shiny side up.
 - **The LED turns red and nothing prints.** Check the paper, the cover and the
   battery. The app shows the reason the printer reports.
 - **For debugging,** run

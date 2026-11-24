@@ -10,6 +10,7 @@ final class AppModel: ObservableObject {
     enum JobState: Equatable {
         case idle
         case connecting
+        case retrying(attempt: Int, of: Int)
         case sending(Double)
         case sent
         case failed(String)
@@ -26,8 +27,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var isScanning = false
     @Published var selectedAddress: String? {
         didSet {
-            UserDefaults.standard.set(selectedAddress, forKey: "printerAddress")
-            UserDefaults.standard.set(selectedPrinter?.name, forKey: "printerName")
+            // A printer chosen with --printer is for that one print only.
+            if !isCommandLine {
+                UserDefaults.standard.set(selectedAddress, forKey: "printerAddress")
+                UserDefaults.standard.set(selectedPrinter?.name, forKey: "printerName")
+            }
             if selectedAddress != oldValue {
                 printerStatus = .unknown
                 restartStatusChecks()
@@ -35,6 +39,7 @@ final class AppModel: ObservableObject {
         }
     }
     @Published private(set) var printerStatus = PrinterStatus.unknown
+    @Published private(set) var isConnecting = false
 
     // Document
     @Published private(set) var sourceImage: CGImage?
@@ -50,15 +55,20 @@ final class AppModel: ObservableObject {
     private let browser = PrinterBrowser()
     private var bluetoothReady = false
     private var statusTask: Task<Void, Never>?
+    private var printTask: Task<Void, Never>?
     private var isPinging = false
     private var lastPrint = Date.distantPast
     private var isCommandLine = false
 
     /// How often to check whether the printer is reachable. The ZIP powers
-    /// itself off after about five idle minutes, and these checks don't
-    /// count as activity, but they let the window notice when it's switched
-    /// back on.
+    /// itself off after a few idle minutes, and these checks don't count as
+    /// activity, but they let the window notice when it's switched back on.
     static let statusInterval: TimeInterval = 45
+    static let asleepStatusInterval: TimeInterval = 15
+
+    /// How many times to try reaching the printer before giving up on a
+    /// print. Each try waits up to about 12 seconds for the printer.
+    static let printAttempts = 5
 
     static let openableTypes: [UTType] = [.image, .pdf]
 
@@ -94,12 +104,20 @@ final class AppModel: ObservableObject {
 
     var isBusy: Bool {
         switch job {
-        case .connecting, .sending: return true
+        case .connecting, .retrying, .sending: return true
         default: return false
         }
     }
 
     var canPrint: Bool { preview != nil && selectedAddress != nil && !isBusy }
+
+    /// A print can be cancelled until the photo starts sending.
+    var canCancel: Bool {
+        switch job {
+        case .connecting, .retrying: return true
+        default: return false
+        }
+    }
 
     // MARK: Printers
 
@@ -131,19 +149,37 @@ final class AppModel: ObservableObject {
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.checkPrinter()
-                try? await Task.sleep(nanoseconds: UInt64(Self.statusInterval * 1_000_000_000))
+                let interval = self.printerStatus == .ready ? Self.statusInterval : Self.asleepStatusInterval
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
             }
         }
     }
 
-    private func checkPrinter() async {
-        // Skip while printing, and while the printer is still busy with the
-        // last print (it counts as activity anyway).
-        guard let address = selectedAddress, !isBusy, !isScanning,
-              Date().timeIntervalSince(lastPrint) > 90,
+    /// Checks the printer now, when the user asks to connect.
+    func connect() {
+        // A check already under way answers the same question.
+        guard !isPinging else {
+            isConnecting = true
+            return
+        }
+        Task {
+            await ensureBluetooth()
+            await checkPrinter(manual: true)
+        }
+    }
+
+    private func checkPrinter(manual: Bool = false) async {
+        // Skip while printing, and (unless asked) while the printer is still
+        // busy with the last print, which counts as activity anyway.
+        guard let address = selectedAddress, !isBusy, !isScanning, !isPinging,
+              manual || Date().timeIntervalSince(lastPrint) > 90,
               let printer = ZipPrinter(address: address) else { return }
         isPinging = true
-        defer { isPinging = false }
+        isConnecting = manual
+        defer {
+            isPinging = false
+            isConnecting = false
+        }
         do {
             try await printer.ping()
             if selectedAddress == address { printerStatus = .ready }
@@ -161,8 +197,22 @@ final class AppModel: ObservableObject {
             job = .failed(ZipPrinterError.unreadableFile(url).localizedDescription)
             return
         }
+        show(image, name: url.lastPathComponent)
+    }
+
+    /// Uses the photo on the clipboard: an image, or a file copied in Finder.
+    func paste() {
+        guard !isBusy else { return }
+        guard let (image, name) = PrintImage.load(from: .general) else {
+            job = .failed("There's no photo on the clipboard.")
+            return
+        }
+        show(image, name: name)
+    }
+
+    private func show(_ image: CGImage, name: String) {
         sourceImage = image
-        fileName = url.lastPathComponent
+        fileName = name
         options.focus = .zero
         options.quarterTurns = 0
         job = .idle
@@ -190,7 +240,12 @@ final class AppModel: ObservableObject {
     // MARK: Printing
 
     func print() {
-        Task { await printNow() }
+        printTask = Task { await printNow() }
+    }
+
+    func cancelPrint() {
+        guard canCancel else { return }
+        printTask?.cancel()
     }
 
     func printNow() async {
@@ -208,13 +263,22 @@ final class AppModel: ObservableObject {
             return
         }
         do {
-            try await printer.send(jpeg: jpeg, fileName: "zipprint.jpg") { [weak self] fraction in
+            try await printer.send(jpeg: jpeg, fileName: "zipprint.jpg", retries: Self.printAttempts - 1,
+                                   onRetry: { [weak self] attempt in
+                                       self?.job = .retrying(attempt: attempt, of: Self.printAttempts)
+                                       if self?.isCommandLine == true {
+                                           self?.log("Can't reach the printer. Trying again (\(attempt) of \(Self.printAttempts))…")
+                                       }
+                                   }) { [weak self] fraction in
                 self?.job = .sending(fraction)
             }
             job = .sent
             printerStatus = .ready
             lastPrint = Date()
+        } catch is CancellationError {
+            job = .idle
         } catch {
+            if case .timeout = error as? ZipPrinterError { printerStatus = .asleep }
             job = .failed(error.localizedDescription)
         }
     }

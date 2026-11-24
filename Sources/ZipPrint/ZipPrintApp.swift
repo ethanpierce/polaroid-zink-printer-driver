@@ -57,6 +57,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in AppModel.shared.open(url) }
     }
 
+    /// Edit › Paste (⌘V). The window has no text fields, so the menu's paste
+    /// action travels up the responder chain to here.
+    @objc func paste(_ sender: Any?) {
+        Task { @MainActor in AppModel.shared.paste() }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }

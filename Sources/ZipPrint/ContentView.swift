@@ -43,8 +43,17 @@ private struct PrinterBar: View {
                     }
                     .labelsHidden()
                     .fixedSize()
-                    PrinterStatusLabel(status: model.printerStatus)
-                        .help(model.selectedAddress ?? "")
+                    HStack(spacing: 8) {
+                        PrinterStatusLabel(status: model.printerStatus, isConnecting: model.isConnecting)
+                            .help(model.selectedAddress ?? "")
+                        if model.printerStatus == .asleep && !model.isConnecting {
+                            Button("Connect") { model.connect() }
+                                .buttonStyle(.link)
+                                .font(.caption)
+                                .disabled(model.isBusy)
+                                .help("Check for the printer now")
+                        }
+                    }
                 }
             }
             Spacer()
@@ -63,6 +72,7 @@ private struct PrinterBar: View {
 
 private struct PrinterStatusLabel: View {
     let status: AppModel.PrinterStatus
+    let isConnecting: Bool
 
     var body: some View {
         HStack(spacing: 5) {
@@ -76,6 +86,7 @@ private struct PrinterStatusLabel: View {
     }
 
     private var color: Color {
+        if isConnecting { return .gray }
         switch status {
         case .unknown: return .gray
         case .ready: return .green
@@ -84,10 +95,11 @@ private struct PrinterStatusLabel: View {
     }
 
     private var label: String {
+        if isConnecting { return "Connecting…" }
         switch status {
         case .unknown: return "Checking…"
         case .ready: return "Ready"
-        case .asleep: return "Asleep. Press the printer's power button."
+        case .asleep: return "Off or asleep"
         }
     }
 }
@@ -113,7 +125,7 @@ private struct PreviewCard: View {
                 VStack(spacing: 8) {
                     Image(systemName: "photo.on.rectangle.angled")
                         .font(.system(size: 36))
-                    Text("Drop a photo or PDF here\nor click to choose")
+                    Text("Drop or paste (⌘V) a photo or PDF,\nor click to choose")
                         .multilineTextAlignment(.center)
                         .font(.callout)
                 }
@@ -208,14 +220,23 @@ private struct PrintButton: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        Button { model.print() } label: {
-            Label("Print", systemImage: "printer")
-                .frame(maxWidth: .infinity)
+        if model.canCancel {
+            Button { model.cancelPrint() } label: {
+                Text("Cancel")
+                    .frame(maxWidth: .infinity)
+            }
+            .controlSize(.large)
+            .keyboardShortcut(.cancelAction)
+        } else {
+            Button { model.print() } label: {
+                Label("Print", systemImage: "printer")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .keyboardShortcut("p")
+            .disabled(!model.canPrint)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .keyboardShortcut("p")
-        .disabled(!model.canPrint)
     }
 }
 
@@ -228,6 +249,8 @@ private struct StatusLine: View {
             case .idle:
                 if model.selectedAddress == nil {
                     Text("Find your printer to get started.")
+                } else if model.printerStatus == .asleep {
+                    Text("Switch the printer on, then click Connect.")
                 } else if model.preview == nil {
                     Text("Choose a photo to print.")
                 } else {
@@ -237,6 +260,16 @@ private struct StatusLine: View {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
                     Text("Connecting to printer…")
+                }
+            case let .retrying(attempt, total):
+                VStack(spacing: 2) {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Can't reach the printer. Trying again (\(attempt) of \(total))…")
+                    }
+                    Text("Make sure it's switched on.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             case let .sending(fraction):
                 VStack(spacing: 4) {

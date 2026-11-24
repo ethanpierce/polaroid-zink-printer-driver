@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -43,13 +44,40 @@ public enum PrintImage {
             return renderPDF(url)
         }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: 4096,
-        ]
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary)
     }
+
+    /// Loads encoded image data, such as a PNG or JPEG.
+    public static func load(_ data: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary)
+    }
+
+    /// Reads a photo from the clipboard: an image or PDF file copied in
+    /// Finder, or an image copied from an app. Returns the image and a name
+    /// to show for it.
+    public static func load(from pasteboard: NSPasteboard) -> (image: CGImage, name: String)? {
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
+        if let url = urls?.first {
+            return load(url).map { ($0, url.lastPathComponent) }
+        }
+        let imageTypes = [UTType.png, .tiff, .jpeg, .heic].map { NSPasteboard.PasteboardType($0.identifier) }
+        if let type = pasteboard.availableType(from: imageTypes),
+           let data = pasteboard.data(forType: type), let image = load(data) {
+            return (image, "Pasted image")
+        }
+        // Anything else AppKit can draw, such as a PDF selection.
+        if let tiff = NSImage(pasteboard: pasteboard)?.tiffRepresentation, let image = load(tiff) {
+            return (image, "Pasted image")
+        }
+        return nil
+    }
+
+    private static let thumbnailOptions: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: 4096,
+    ]
 
     static func renderPDF(_ url: URL, longSide: CGFloat = 2400) -> CGImage? {
         guard let page = CGPDFDocument(url as CFURL)?.page(at: 1) else { return nil }

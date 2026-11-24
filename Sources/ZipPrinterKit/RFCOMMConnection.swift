@@ -42,26 +42,36 @@ final class RFCOMMConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
         self.device = device
     }
 
+    /// Opens the channel. Cancelling the calling task gives up right away
+    /// rather than waiting out the timeout.
     func open(channelID: BluetoothRFCOMMChannelID, timeout: TimeInterval = 20) async throws {
-        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-            openContinuation = c
-            var ch: IOBluetoothRFCOMMChannel?
-            let result = device.openRFCOMMChannelAsync(&ch, withChannelID: channelID, delegate: self)
-            ZipLog.log("open RFCOMM channel \(channelID): \(result)")
-            if result != kIOReturnSuccess {
-                openContinuation = nil
-                c.resume(throwing: ZipPrinterError.bluetooth("connect", result))
-                return
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+                openContinuation = c
+                var ch: IOBluetoothRFCOMMChannel?
+                let result = device.openRFCOMMChannelAsync(&ch, withChannelID: channelID, delegate: self)
+                ZipLog.log("open RFCOMM channel \(channelID): \(result)")
+                if result != kIOReturnSuccess {
+                    openContinuation = nil
+                    c.resume(throwing: ZipPrinterError.bluetooth("connect", result))
+                    return
+                }
+                channel = ch
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                    self?.abandonOpen(throwing: ZipPrinterError.timeout("connecting"))
+                }
             }
-            channel = ch
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                guard let self, let c = self.openContinuation else { return }
-                self.openContinuation = nil
-                self.channel?.close()
-                c.resume(throwing: ZipPrinterError.timeout("connecting"))
-            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.abandonOpen(throwing: CancellationError()) }
         }
+    }
+
+    private func abandonOpen(throwing error: Error) {
+        guard let c = openContinuation else { return }
+        openContinuation = nil
+        channel?.close()
+        c.resume(throwing: error)
     }
 
     /// Writes `data`, split into chunks no larger than the channel MTU.
