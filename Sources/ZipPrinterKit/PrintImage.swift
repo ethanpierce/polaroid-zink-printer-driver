@@ -95,13 +95,19 @@ public enum PrintImage {
         return ctx.makeImage()
     }
 
-    /// Encodes at the highest quality that fits in `maxBytes`.
+    /// Encodes at the highest quality that fits in `maxBytes`. If even low
+    /// quality doesn't fit, it sends fewer pixels instead: the printer
+    /// stretches any JPEG onto the sheet, so a smaller one still fills it.
     public static func jpegData(_ image: CGImage, maxBytes: Int = PrintImage.maxFileSize) -> Data? {
         var smallest: Data?
-        for quality in stride(from: 0.9, through: 0.3, by: -0.05) {
-            guard let data = jpegData(image, quality: quality) else { return nil }
-            if data.count <= maxBytes { return data }
-            smallest = data
+        // Steps of 64 keep 2:3 images in whole 16-pixel JPEG blocks.
+        for width in stride(from: image.width, through: image.width / 2, by: -64) {
+            guard let scaled = width == image.width ? image : resize(image, width: width) else { break }
+            for quality in stride(from: 0.9, through: 0.3, by: -0.05) {
+                guard let data = jpegData(scaled, quality: quality) else { return nil }
+                if data.count <= maxBytes { return data }
+                if data.count < smallest?.count ?? .max { smallest = data }
+            }
         }
         return smallest
     }
@@ -124,6 +130,14 @@ public enum PrintImage {
         ctx.rotate(by: -CGFloat(turns) * .pi / 2)   // clockwise
         ctx.draw(image, in: CGRect(x: -CGFloat(image.width) / 2, y: -CGFloat(image.height) / 2,
                                    width: CGFloat(image.width), height: CGFloat(image.height)))
+        return ctx.makeImage()
+    }
+
+    static func resize(_ image: CGImage, width: Int) -> CGImage? {
+        let height = image.height * width / image.width
+        guard let ctx = makeContext(width: width, height: height) else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         return ctx.makeImage()
     }
 

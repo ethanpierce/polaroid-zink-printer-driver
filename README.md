@@ -75,7 +75,8 @@ Security › Bluetooth**.
 ## How it works
 
 The ZIP exposes the standard Bluetooth **OBEX Object Push** profile. ZIP Print
-renders your image to a 640×960 JPEG of 45 KB or less. It then pushes the file
+renders your image to a 640×960 JPEG of 45 KB or less (a little smaller for
+very detailed images). It then pushes the file
 over RFCOMM, paced so the printer's small receive buffer never overflows. The
 printer scales the image onto its 640×1224-dot print head and prints.
 

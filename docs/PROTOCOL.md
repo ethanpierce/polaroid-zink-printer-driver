@@ -119,8 +119,10 @@ as fast as the link allowed:
 
 ZIP Print avoids this in two ways:
 
-- It keeps files to **45 KB or less**, lowering JPEG quality as needed. That's
-  under the roughly 48 KB the printer lost.
+- It keeps files to **45 KB or less**. That's under the roughly 48 KB the
+  printer lost. It lowers JPEG quality first, down to 30%. If a very detailed
+  image still doesn't fit, it sends fewer pixels (576×864, 512×768…), which the
+  printer stretches onto the sheet the same way.
 - It sends 4 KB packets at about **12 KB/s**.
 
 Some JPEGs are reportedly rejected silently: the LED turns red and nothing

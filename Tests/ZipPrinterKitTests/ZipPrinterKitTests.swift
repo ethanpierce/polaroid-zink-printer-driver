@@ -1,4 +1,5 @@
 import CoreGraphics
+import ImageIO
 import XCTest
 @testable import ZipPrinterKit
 
@@ -90,9 +91,35 @@ final class PrintImageTests: XCTestCase {
         XCTAssertEqual(out.height, 30)
     }
 
+    /// Colour bars under a fine grid: too detailed to fit at full size even
+    /// at the lowest JPEG quality.
+    private func detailedImage() -> CGImage {
+        let ctx = CGContext(data: nil, width: 640, height: 960, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        for i in 0..<96 {
+            ctx.setFillColor(red: CGFloat(i % 3) / 2, green: CGFloat(i % 5) / 4, blue: CGFloat(i % 7) / 6, alpha: 1)
+            ctx.fill(CGRect(x: 0, y: i * 10, width: 640, height: 10))
+        }
+        ctx.setStrokeColor(gray: 0, alpha: 1)
+        for x in stride(from: 0, to: 640, by: 6) { ctx.stroke(CGRect(x: x, y: 0, width: 1, height: 960)) }
+        return ctx.makeImage()!
+    }
+
     func testJPEGEncodes() {
         let data = PrintImage.jpegData(PrintImage.render(solidImage(width: 100, height: 150))!)!
         XCTAssertLessThanOrEqual(data.count, PrintImage.maxFileSize)
         XCTAssertEqual([UInt8](data.prefix(2)), [0xFF, 0xD8])
+    }
+
+    func testDetailedJPEGShrinksToFit() throws {
+        let image = detailedImage()
+        try XCTSkipIf(PrintImage.jpegData(image, quality: 0.3)!.count <= PrintImage.maxFileSize,
+                      "test image compresses too well to exercise the fallback")
+        let data = try XCTUnwrap(PrintImage.jpegData(image))
+        XCTAssertLessThanOrEqual(data.count, PrintImage.maxFileSize)
+        let decoded = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) })
+        XCTAssertLessThan(decoded.width, 640)
+        XCTAssertEqual(decoded.width % 16, 0)
+        XCTAssertEqual(decoded.height * 2, decoded.width * 3)
     }
 }
